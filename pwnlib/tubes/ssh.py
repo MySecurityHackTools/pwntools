@@ -1,4 +1,5 @@
 from __future__ import absolute_import
+from __future__ import division
 
 import inspect
 import logging
@@ -341,7 +342,8 @@ class ssh_process(ssh_channel):
         libs = self.parent.libs(self.executable)
 
         for lib in libs:
-            if self.executable in lib:
+            # Cannot just check "executable in lib", see issue #1047
+            if lib.endswith(self.executable):
                 return pwnlib.elf.elf.ELF(lib)
 
 
@@ -873,6 +875,8 @@ os.chdir(%(cwd)r)
 if env is not None:
     os.environ.clear()
     os.environ.update(env)
+else:
+    env = os.environ
 
 def is_exe(path):
     return os.path.isfile(path) and os.access(path, os.X_OK)
@@ -960,7 +964,7 @@ except Exception:
 %(func_src)s
 apply(%(func_name)s, %(func_args)r)
 
-os.execve(exe, argv, os.environ)
+os.execve(exe, argv, env)
 """ % locals()
 
         script = script.strip()
@@ -1301,7 +1305,7 @@ from ctypes import *; libc = CDLL('libc.so.6'); print(libc.getenv(%r))
         return misc.parse_ldd_output(data)
 
     def _get_fingerprint(self, remote):
-        cmd = '(openssl sha256 || sha256 || sha256sum) 2>/dev/null < '
+        cmd = '(sha256 || sha256sum || openssl sha256) 2>/dev/null < '
         cmd = cmd + sh_string(remote)
         data, status = self.run_to_end(cmd)
 

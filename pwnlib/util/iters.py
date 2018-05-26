@@ -2,6 +2,7 @@
 This module includes and extends the standard module :mod:`itertools`.
 """
 from __future__ import absolute_import
+from __future__ import division
 
 import collections
 import copy
@@ -534,8 +535,8 @@ def iter_except(func, exception):
     the end.
 
     Arguments:
-      func:  The function to call.
-      exception(exception):  The exception that signals the end.  Other
+      func(callable): The function to call.
+      exception(Exception):  The exception that signals the end.  Other
         exceptions will not be caught.
 
     Returns:
@@ -783,7 +784,7 @@ def bruteforce(func, alphabet, length, method = 'upto', start = None, databag = 
     if method == 'fixed':
         total_iterations = len(alphabet) ** length
     else:
-        total_iterations = (len(alphabet) ** (length + 1) / (len(alphabet) - 1)) - 1
+        total_iterations = (len(alphabet) ** (length + 1) // (len(alphabet) - 1)) - 1
 
     if start is not None:
         i, N = start
@@ -791,7 +792,7 @@ def bruteforce(func, alphabet, length, method = 'upto', start = None, databag = 
             raise ValueError('bruteforce(): invalid starting point')
 
         i -= 1
-        chunk_size = total_iterations / N
+        chunk_size = total_iterations // N
         rest = total_iterations % N
         starting_point = 0
 

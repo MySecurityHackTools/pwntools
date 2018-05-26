@@ -1,4 +1,5 @@
 from __future__ import absolute_import
+from __future__ import division
 
 import socket
 import ssl as _ssl
@@ -23,7 +24,7 @@ class remote(sock):
         typ: The string "tcp" or "udp" or an integer to pass to :func:`socket.getaddrinfo`.
         timeout: A positive number, None or the string "default".
         ssl(bool): Wrap the socket with SSL
-        sock(socket): Socket to inherit, rather than connecting
+        sock(socket.socket): Socket to inherit, rather than connecting
 
     Examples:
 

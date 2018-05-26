@@ -34,6 +34,7 @@ Module Members
 --------------
 """
 from __future__ import absolute_import
+from __future__ import division
 
 import codecs
 import collections
@@ -55,10 +56,12 @@ from elftools.elf.enums import ENUM_P_TYPE
 from elftools.elf.gnuversions import GNUVerDefSection
 from elftools.elf.relocation import RelocationSection
 from elftools.elf.sections import SymbolTableSection
+from elftools.elf.segments import InterpSegment
 
 import intervaltree
 
 from pwnlib import adb
+from pwnlib import qemu
 from pwnlib.asm import *
 from pwnlib.context import LocalContext
 from pwnlib.context import context
@@ -67,7 +70,6 @@ from pwnlib.elf.config import parse_kconfig
 from pwnlib.elf.datatypes import constants
 from pwnlib.elf.plt import emulate_plt_instructions
 from pwnlib.log import getLogger
-from pwnlib.qemu import get_qemu_arch
 from pwnlib.term import text
 from pwnlib.tubes.process import process
 from pwnlib.util import misc
@@ -182,6 +184,7 @@ class ELF(ELFFile):
     functions = {}
     endian = 'little'
     address = 0x400000
+    linker = None
 
     # Whether to fill gaps in memory with zeroed pages
     _fill_gaps = True
@@ -246,7 +249,7 @@ class ELF(ELFFile):
         self.bits = self.elfclass
 
         #: :class:`int`: Pointer width, in bytes
-        self.bytes = self.bits / 8
+        self.bytes = self.bits // 8
 
         if self.arch == 'mips':
             mask = lambda a, b: a & b == b
@@ -259,6 +262,15 @@ class ELF(ELFFile):
             or mask(flags, E_FLAGS.EF_MIPS_ARCH_64R2):
                 self.arch = 'mips64'
                 self.bits = 64
+
+        # Is this a native binary? Should we be checking QEMU?
+        try:
+            with context.local(arch=self.arch):
+                #: Whether this ELF should be able to run natively
+                self.native = context.native
+        except AttributeError:
+            # The architecture may not be supported in pwntools
+            self.native = False
 
         self._address = 0
         if self.elftype != 'DYN':
@@ -298,7 +310,19 @@ class ELF(ELFFile):
 
         for seg in self.iter_segments_by_type('PT_INTERP'):
             self.executable = True
+
+            #: ``True`` if the ELF is statically linked
             self.statically_linked = False
+
+            #: Path to the linker for the ELF
+            self.linker = self.read(seg.header.p_vaddr, seg.header.p_memsz)
+            self.linker = self.linker.rstrip('\x00')
+
+        #: Operating system of the ELF
+        self.os = 'linux'
+
+        if self.linker and self.linker.startswith('/system/bin/linker'):
+            self.os = 'android'
 
         #: ``True`` if the ELF is a shared library
         self.library = not self.executable and self.elftype == 'DYN'
@@ -408,10 +432,10 @@ class ELF(ELFFile):
         import pwnlib.gdb
         return pwnlib.gdb.debug([self.path] + argv, *a, **kw)
 
-    def _describe(self):
+    def _describe(self, *a, **kw):
         log.info_once('\n'.join((repr(self.path),
                                 '%-10s%s-%s-%s' % ('Arch:', self.arch, self.bits, self.endian),
-                                self.checksec())))
+                                self.checksec(*a, **kw))))
 
     def __repr__(self):
         return "ELF(%r)" % self.path
@@ -605,8 +629,18 @@ class ELF(ELFFile):
         >>> any(map(lambda x: 'libc' in x, bash.libs.keys()))
         True
         """
-        if not self.get_section_by_name('.dynamic'):
+
+        # We need a .dynamic section for dynamically linked libraries
+        if not self.get_section_by_name('.dynamic') or self.statically_linked:
             self.libs= {}
+            return
+
+        # We must also specify a 'PT_INTERP', otherwise it's a 'statically-linked'
+        # binary which is also position-independent (and as such has a .dynamic).
+        for segment in self.iter_segments_by_type('PT_INTERP'):
+            break
+        else:
+            self.libs = {}
             return
 
         try:
@@ -619,10 +653,11 @@ class ELF(ELFFile):
                 if os.path.exists(lib):
                     continue
 
-                qemu_lib = '/etc/qemu-binfmt/%s/%s' % (get_qemu_arch(arch=self.arch), lib)
-
-                if os.path.exists(qemu_lib):
-                    libs[os.path.realpath(qemu_lib)] = libs.pop(lib)
+                if not self.native:
+                    ld_prefix = qemu.ld_prefix()
+                    qemu_lib = os.path.exists(os.path.join(ld_prefix, lib))
+                    if qemu_lib:
+                        libs[os.path.realpath(qemu_lib)] = libs.pop(lib)
 
             self.libs = libs
 
@@ -1488,9 +1523,9 @@ class ELF(ELFFile):
         if not dt_runpath:
             return None
 
-        return self.dynamic_string(dt_rpath.entry.d_ptr)
+        return self.dynamic_string(dt_runpath.entry.d_ptr)
 
-    def checksec(self, banner=True):
+    def checksec(self, banner=True, color=True):
         """checksec(banner=True)
 
         Prints out information in the binary, similar to ``checksec.sh``.
@@ -1498,9 +1533,9 @@ class ELF(ELFFile):
         Arguments:
             banner(bool): Whether to print the path to the ELF binary.
         """
-        red    = text.red
-        green  = text.green
-        yellow = text.yellow
+        red    = text.red if color else str
+        green  = text.green if color else str
+        yellow = text.yellow if color else str
 
         res = []
 
@@ -1675,16 +1710,33 @@ class ELF(ELFFile):
         return packing.unpack(self.read(address, context.bytes), *a, **kw)
 
     def string(self, address):
-        """Reads a null-terminated string from the specified ``address``"""
+        """string(address) -> str
+
+        Reads a null-terminated string from the specified ``address``
+
+        Returns:
+            A ``str`` with the string contents (NUL terminator is omitted),
+            or an empty string if no NUL terminator could be found.
+        """
         data = ''
         while True:
-            c = self.read(address, 1)
+            read_size = 0x1000
+            partial_page = address & 0xfff
+
+            if partial_page:
+                read_size -= partial_page
+
+            c = self.read(address, read_size)
+
             if not c:
                 return ''
-            if c == '\x00':
-                return data
+
             data += c
-            address += 1
+
+            if '\x00' in c:
+                return data[:data.index('\x00')]
+
+            address += len(c)
 
     def flat(self, address, *a, **kw):
         """Writes a full array of values to the specified address.

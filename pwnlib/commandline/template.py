@@ -1,5 +1,6 @@
 #!/usr/bin/env python2
 from __future__ import absolute_import
+from __future__ import division
 
 import re
 
@@ -19,6 +20,7 @@ parser.add_argument('--port', help='Remote port / SSH port', type=int)
 parser.add_argument('--user', help='SSH Username')
 parser.add_argument('--pass', help='SSH Password', dest='password')
 parser.add_argument('--path', help='Remote path of file on SSH server')
+parser.add_argument('--quiet', help='Less verbose template comments', action='store_true')
 
 def main(args):
     cache = None
@@ -49,7 +51,8 @@ def main(args):
                              args.port,
                              args.user,
                              args.password,
-                             args.path)
+                             args.path,
+                             args.quiet)
 
     # Fix Mako formatting bs
     output = re.sub('\n\n\n', '\n\n', output)

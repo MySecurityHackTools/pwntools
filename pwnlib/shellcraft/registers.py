@@ -1,4 +1,5 @@
 from __future__ import absolute_import
+from __future__ import division
 
 import re
 
@@ -39,6 +40,8 @@ mips = {
     '$30': 30, '$s8': 30,
     '$31': 31, '$ra': 31,
 }
+
+mips_list = list(mips)
 
 arm = map('r{}'.format, range(13))
 arm += ["sp", "lr", "pc", "cpsr"]
@@ -163,7 +166,7 @@ class Register(object):
 
     @property
     def bytes(self):
-        return self.bits / 8
+        return self.bits // 8
 
     def fits(self, value):
         return self.size >= bits_required(value)
@@ -211,7 +214,7 @@ def current():
         'arm': arm,
         'thumb': arm,
         'aarch64': aarch64,
-        'mips': mips,
+        'mips': mips_list,
         'powerpc': powerpc
     }[context.arch]
 

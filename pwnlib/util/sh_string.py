@@ -240,6 +240,7 @@ and should therefore be compatible with ``dash``.
 .. _BusyBox's Wikipedia page: https://en.wikipedia.org/wiki/BusyBox#Features
 """
 from __future__ import absolute_import
+from __future__ import division
 
 import string
 import subprocess
@@ -393,7 +394,7 @@ def sh_string(s):
         return "''"
 
     chars = set(s)
-    very_good = set(string.ascii_letters + string.digits + "_+.,/")
+    very_good = set(string.ascii_letters + string.digits + "_+.,/-")
 
     # Alphanumeric can always just be used verbatim.
     if chars <= very_good:

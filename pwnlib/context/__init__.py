@@ -5,6 +5,7 @@ Implements context management so that nested/scoped contexts and threaded
 contexts work properly and as expected.
 """
 from __future__ import absolute_import
+from __future__ import division
 
 import collections
 import functools
@@ -337,6 +338,8 @@ class ContextType(object):
         'binary': None,
         'bits': 32,
         'buffer_size': 4096,
+        'cyclic_alphabet': string.ascii_lowercase,
+        'cyclic_size': 4,
         'delete_corefiles': False,
         'device': os.getenv('ANDROID_SERIAL', None) or None,
         'endian': 'little',
@@ -775,6 +778,7 @@ class ContextType(object):
         self.arch   = binary.arch
         self.bits   = binary.bits
         self.endian = binary.endian
+        self.os     = binary.os
 
         return binary
 
@@ -783,7 +787,7 @@ class ContextType(object):
         """
         Target machine word size, in bytes (i.e. the size of general purpose registers).
 
-        This is a convenience wrapper around ``bits / 8``.
+        This is a convenience wrapper around ``bits // 8``.
 
         Examples:
 
@@ -796,7 +800,7 @@ class ContextType(object):
             ...
             AttributeError: bits must be > 0 (0)
         """
-        return self.bits/8
+        return self.bits // 8
     @bytes.setter
     def bytes(self, value):
         self.bits = value*8
@@ -1248,6 +1252,32 @@ class ContextType(object):
         Default value is ``""``.
         """
         return str(value)
+
+    @_validator
+    def cyclic_alphabet(self, alphabet):
+        """Cyclic alphabet.
+
+        Default value is `string.ascii_lowercase`.
+        """
+
+        # Do not allow multiple occurrences
+        if len(set(alphabet)) != len(alphabet):
+            raise AttributeError("cyclic alphabet cannot contain duplicates")
+
+        return str(alphabet)
+
+    @_validator
+    def cyclic_size(self, size):
+        """Cyclic pattern size.
+
+        Default value is `4`.
+        """
+        size = int(size)
+
+        if size > self.bytes:
+            raise AttributeError("cyclic pattern size cannot be larger than word size")
+
+        return size
 
     #*************************************************************************
     #                               ALIASES
