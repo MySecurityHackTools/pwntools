@@ -27,6 +27,9 @@ def can_init():
     ``pwnlib`` manage the terminal.
     """
 
+    if sys.platform == 'win32':
+        return False
+
     if not sys.stdout.isatty():
         return False
 
@@ -82,3 +85,4 @@ def init():
     readline.init()
 
     term_mode = True
+    text.num_colors = termcap.get('colors', default = 8) or 8
